@@ -9,7 +9,10 @@
 #include <format>
 #include <vector>
 #include <algorithm>
-
+#include <mmdeviceapi.h>
+#include <audiopolicy.h>
+#include <winrt/Windows.Media.h>
+#include <Audioclient.h>
 namespace audio {
 	namespace platform {
 
@@ -40,26 +43,23 @@ namespace audio {
 			}
 		}
 
-#if _WIN32_WINNT >= 0x0A00
+
 		auto getTimelineProperties(winrt::Windows::Media::Control::GlobalSystemMediaTransportControlsSession const& session)
 			-> winrt::Windows::Media::Control::GlobalSystemMediaTransportControlsSessionTimelineProperties
 		{
-			return session.GetTimelinePropertiesAsync().get();
+			return session.GetTimelineProperties();
 		}
-#endif
+
 
 		std::expected<std::chrono::seconds, std::string> WinRTAudioSession::getDuration() noexcept {
 			if (!m_currentSession)
 				return std::unexpected("No active session.");
 			try {
-#if _WIN32_WINNT >= 0x0A00
+
 				auto timeline = getTimelineProperties(m_currentSession);
 				auto duration = timeline.EndTime() - timeline.StartTime();
 				int64_t seconds = duration.count() / 10000000LL;
 				return std::chrono::seconds(seconds);
-#else
-				return std::unexpected("Timeline properties not supported on this platform.");
-#endif
 			}
 			catch (const std::exception& ex) {
 				return std::unexpected(std::format("Error getting duration: {}", ex.what()));
@@ -70,13 +70,11 @@ namespace audio {
 			if (!m_currentSession)
 				return std::unexpected("No active session.");
 			try {
-#if _WIN32_WINNT >= 0x0A00
+
 				auto timeline = getTimelineProperties(m_currentSession);
 				int64_t seconds = timeline.Position().count() / 10000000LL;
 				return std::chrono::seconds(seconds);
-#else
-				return std::unexpected("Timeline properties not supported on this platform.");
-#endif
+
 			}
 			catch (const std::exception& ex) {
 				return std::unexpected(std::format("Error getting current position: {}", ex.what()));
@@ -194,15 +192,101 @@ namespace audio {
 		}
 
 		std::expected<void, std::string> WinRTAudioSession::seek(std::chrono::seconds position) noexcept {
-			return std::unexpected("Seek operation is not supported by the current session.");
+			if (!m_currentSession)
+				return std::unexpected("No active session.");
+			try {
+				int64_t hundred_nanos = position.count() * 10000000LL;
+				m_currentSession.TryChangePlaybackPositionAsync(hundred_nanos).get();
+				return {};
+			}
+			catch (const std::exception& ex) {
+				return std::unexpected(std::format("Seek operation failed: {}", ex.what()));
+			}
+			catch (const winrt::hresult_error& ex) {
+				return std::unexpected(std::format("Seek operation failed with HRESULT error: {}", winrt::to_string(ex.message())));
+			}
 		}
 
 		std::expected<void, std::string> WinRTAudioSession::setVolume(double volume) noexcept {
-			return std::unexpected("Volume control is not supported by the current session.");
+			if (!m_currentSession)
+				return std::unexpected("No active session.");
+			try {
+
+				if (volume < 0.0 || volume > 1.0) {
+					return std::unexpected("Volume must be between 0.0 and 1.0");
+				}
+
+				auto playbackInfo = m_currentSession.GetPlaybackInfo();
+				auto controlsInfo = playbackInfo.Controls();
+				winrt::com_ptr<IAudioSessionManager2> sessionManager;
+				HRESULT hr = CoCreateInstance(__uuidof(MMDeviceEnumerator), nullptr, CLSCTX_ALL,
+					__uuidof(IMMDeviceEnumerator), sessionManager.put_void());
+				if (FAILED(hr)) {
+					return std::unexpected("Failed to create audio session manager");
+				}
+
+				winrt::com_ptr<IAudioSessionControl> sessionControl;
+				hr = sessionManager->GetAudioSessionControl(nullptr, 0, sessionControl.put());
+				if (FAILED(hr)) {
+					return std::unexpected("Failed to get audio session control");
+				}
+				winrt::com_ptr<ISimpleAudioVolume> volumeControl;
+				hr = sessionControl->QueryInterface(__uuidof(ISimpleAudioVolume), volumeControl.put_void());
+				if (FAILED(hr)) {
+					return std::unexpected("Failed to get volume control interface");
+				}
+				hr = volumeControl->SetMasterVolume(static_cast<float>(volume), nullptr);
+				if (FAILED(hr)) {
+					return std::unexpected("Failed to set volume");
+				}
+
+				return {};
+			}
+			catch (const std::exception& ex) {
+				return std::unexpected(std::format("Set volume failed: {}", ex.what()));
+			}
+			catch (const winrt::hresult_error& ex) {
+				return std::unexpected(std::format("Set volume failed with HRESULT error: {}", winrt::to_string(ex.message())));
+			}
 		}
 
 		std::expected<double, std::string> WinRTAudioSession::getVolume() noexcept {
-			return std::unexpected("Volume control is not supported by the current session.");
+			if (!m_currentSession)
+				return std::unexpected("No active session.");
+			try {
+				auto playbackInfo = m_currentSession.GetPlaybackInfo();
+				auto controlsInfo = playbackInfo.Controls();
+				winrt::com_ptr<IAudioSessionManager2> sessionManager;
+				HRESULT hr = CoCreateInstance(__uuidof(MMDeviceEnumerator), nullptr, CLSCTX_ALL,
+					__uuidof(IMMDeviceEnumerator), sessionManager.put_void());
+				if (FAILED(hr)) {
+					return std::unexpected("Failed to create audio session manager");
+				}
+
+				winrt::com_ptr<IAudioSessionControl> sessionControl;
+				hr = sessionManager->GetAudioSessionControl(nullptr, 0, sessionControl.put());
+				if (FAILED(hr)) {
+					return std::unexpected("Failed to get audio session control");
+				}
+				winrt::com_ptr<ISimpleAudioVolume> volumeControl;
+				hr = sessionControl->QueryInterface(__uuidof(ISimpleAudioVolume), volumeControl.put_void());
+				if (FAILED(hr)) {
+					return std::unexpected("Failed to get volume control interface");
+				}
+				float volume;
+				hr = volumeControl->GetMasterVolume(&volume);
+				if (FAILED(hr)) {
+					return std::unexpected("Failed to get volume");
+				}
+
+				return static_cast<double>(volume);
+			}
+			catch (const std::exception& ex) {
+				return std::unexpected(std::format("Get volume failed: {}", ex.what()));
+			}
+			catch (const winrt::hresult_error& ex) {
+				return std::unexpected(std::format("Get volume failed with HRESULT error: {}", winrt::to_string(ex.message())));
+			}
 		}
 
 		void WinRTAudioSession::setPlaybackChangedCallback(PlaybackChangedCallback callback) noexcept {
