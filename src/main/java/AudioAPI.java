@@ -153,7 +153,8 @@ public class AudioAPI {
         public Duration getCurrentPosition() throws AudioException {
             checkClosed();
             try (final var arena = Arena.ofConfined()) {
-                final var result = (MemorySegment) GET_CURRENT_POSITION.invokeExact(arena, nativeHandle);
+                final var allocator = SegmentAllocator.slicingAllocator(arena.allocate(EXPECTED_RESULT_LAYOUT));
+           final var result = (MemorySegment) GET_CURRENT_POSITION.invokeExact(allocator, nativeHandle);
                 final var seconds = getValueAsLong(result);
                 return Duration.ofSeconds(seconds);
             } catch (AudioException e) {
@@ -232,7 +233,8 @@ public class AudioAPI {
         public void play() throws AudioException {
             checkClosed();
             try (final var arena = Arena.ofConfined()) {
-                final var result = (MemorySegment) PLAY.invokeExact(arena, nativeHandle);
+                final var allocator = SegmentAllocator.slicingAllocator(arena.allocate(EXPECTED_RESULT_LAYOUT));
+                final var result = (MemorySegment) PLAY.invokeExact(allocator, nativeHandle);
                 checkResult(result);
             } catch (AudioException e) {
                 throw e;
@@ -244,7 +246,8 @@ public class AudioAPI {
         public void pause() throws AudioException {
             checkClosed();
             try (final var arena = Arena.ofConfined()) {
-                final var result = (MemorySegment) PAUSE.invokeExact(arena, nativeHandle);
+                final var allocator = SegmentAllocator.slicingAllocator(arena.allocate(EXPECTED_RESULT_LAYOUT));
+                final var result = (MemorySegment) PAUSE.invokeExact(allocator, nativeHandle);
                 checkResult(result);
             } catch (AudioException e) {
                 throw e;
@@ -256,7 +259,8 @@ public class AudioAPI {
         public void next() throws AudioException {
             checkClosed();
             try (final var arena = Arena.ofConfined()) {
-                final var result = (MemorySegment) NEXT.invokeExact(arena, nativeHandle);
+                final var allocator = SegmentAllocator.slicingAllocator(arena.allocate(EXPECTED_RESULT_LAYOUT));
+                final var result = (MemorySegment) NEXT.invokeExact(allocator, nativeHandle);
                 checkResult(result);
             } catch (AudioException e) {
                 throw e;
@@ -268,7 +272,8 @@ public class AudioAPI {
         public void previous() throws AudioException {
             checkClosed();
             try (final var arena = Arena.ofConfined()) {
-                final var result = (MemorySegment) PREVIOUS.invokeExact(arena, nativeHandle);
+                final var allocator = SegmentAllocator.slicingAllocator(arena.allocate(EXPECTED_RESULT_LAYOUT));
+                final var result = (MemorySegment) PREVIOUS.invokeExact(allocator, nativeHandle);
                 checkResult(result);
             } catch (AudioException e) {
                 throw e;
@@ -280,7 +285,8 @@ public class AudioAPI {
         public void seek(Duration position) throws AudioException {
             checkClosed();
             try (final var arena = Arena.ofConfined()) {
-                final var result = (MemorySegment) SEEK.invokeExact(arena, nativeHandle, position.getSeconds());
+                final var allocator = SegmentAllocator.slicingAllocator(arena.allocate(EXPECTED_RESULT_LAYOUT));
+                final var result = (MemorySegment) SEEK.invokeExact(allocator, nativeHandle,position.getSeconds());
                 checkResult(result);
             } catch (AudioException e) {
                 throw e;
@@ -295,7 +301,8 @@ public class AudioAPI {
                 throw new IllegalArgumentException("Volume must be between 0.0 and 1.0");
             }
             try (final var arena = Arena.ofConfined()) {
-                final var result = (MemorySegment) SET_VOLUME.invokeExact(arena, nativeHandle, volume);
+                final var allocator = SegmentAllocator.slicingAllocator(arena.allocate(EXPECTED_RESULT_LAYOUT));
+                final var result = (MemorySegment) SET_VOLUME.invokeExact(allocator, nativeHandle, volume);
                 checkResult(result);
             } catch (AudioException e) {
                 throw e;
@@ -307,7 +314,8 @@ public class AudioAPI {
         public double getVolume() throws AudioException {
             checkClosed();
             try (final var arena = Arena.ofConfined()) {
-                final var result = (MemorySegment) GET_VOLUME.invokeExact(arena, nativeHandle);
+                final var allocator = SegmentAllocator.slicingAllocator(arena.allocate(EXPECTED_RESULT_LAYOUT));
+                final var result = (MemorySegment) GET_VOLUME.invokeExact(allocator, nativeHandle);
                 return getValueAsDouble(result);
             } catch (AudioException e) {
                 throw e;
@@ -403,7 +411,7 @@ public class AudioAPI {
             }
 
             try {
-                final var valueSegment = MemorySegment.ofAddress(valuePtr.address()).reinterpret(8); 
+                final var valueSegment = MemorySegment.ofAddress(valuePtr.address()).reinterpret(8);
                 return valueSegment.get(ValueLayout.JAVA_DOUBLE, 0);
             } catch (Exception e) {
                 throw new RuntimeException("Failed to read double value", e);
